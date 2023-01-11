@@ -178,7 +178,7 @@ Write-Host -ForegroundColor Yellow @'
 }
 
 function GetApplicationDependency( [string] $appFile, [string] $minVersion = "0.0" ) {
-    $tmpFolder = Join-Path (Get-TempDir) ([Guid]::NewGuid().ToString())
+    $tmpFolder = Join-Path ([System.IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
     try {
         Extract-AppFileToFolder -appFilename $appFile -appFolder $tmpFolder -generateAppJson
         $appJsonFile = Join-Path $tmpFolder "app.json"
@@ -348,7 +348,7 @@ $version = [System.Version]::new($currentArtifactUrl.Split('/')[4])
 $currentVersion = "$($version.Major).$($version.Minor)"
 $validateVersion = "17.0"
 
-$tmpAppsFolder = Join-Path $hosthelperfolder ([Guid]::NewGuid().ToString())
+$tmpAppsFolder = Join-Path $bcContainerHelperConfig.hostHelperFolder ([Guid]::NewGuid().ToString())
 @(CopyAppFilesToFolder -appFiles @($installApps+$apps) -folder $tmpAppsFolder) | % {
     $appFile = $_
     $version = GetApplicationDependency -appFile $appFile -minVersion $validateVersion
@@ -420,7 +420,7 @@ if ($artifactUrl) {
 $prevProgressPreference = $progressPreference
 $progressPreference = 'SilentlyContinue'
 
-$appPackagesFolder = Join-Path $hosthelperfolder ([Guid]::NewGuid().ToString())
+$appPackagesFolder = Join-Path $bcContainerHelperConfig.hostHelperFolder ([Guid]::NewGuid().ToString())
 New-Item $appPackagesFolder -ItemType Directory | Out-Null
 
 try {

@@ -1,11 +1,13 @@
 <# 
  .Synopsis
-  Invoke gh command with parameters
+  Invoke git command with parameters
  .Description
-  Requires Github CLI installed  
+  Requires Git installed  
 #>
-function invoke-gh {
+function invoke-git {
     Param(
+        [parameter(mandatory = $false, ValueFromPipeline = $true)]
+        [string] $inputStr = "",
         [switch] $silent,
         [switch] $returnValue,
         [parameter(mandatory = $true, position = 0)][string] $command,
@@ -21,7 +23,6 @@ function invoke-gh {
             $arguments += "$_ "
         }
     }
-    cmdDo -command gh -arguments $arguments -silent:$silent -returnValue:$returnValue
+    cmdDo -command git -arguments $arguments -silent:$silent -returnValue:$returnValue -inputStr $inputStr
 }
-
-Export-ModuleMember -Function Invoke-gh
+Export-ModuleMember -Function Invoke-git

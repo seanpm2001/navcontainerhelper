@@ -33,15 +33,15 @@ try {
     if ($appFolder -eq "") {
         if ($openFolder) {
             $generateAppJson = $true
-            $appFolder = Join-Path $env:TEMP ([Guid]::NewGuid().ToString())
+            $appFolder = Join-Path ([System.IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
         }
         else {
             $appFolder = "$($appFilename).source"
         }
     }
 
-    if ("$appFolder" -eq "$hostHelperFolder" -or "$appFolder" -eq "$hostHelperFolder\") {
-        throw "The folder specified in ObjectsFolder will be erased, you cannot specify $hostHelperFolder"
+    if ("$appFolder" -eq "($bcContainerHelperConfig.hostHelperFolder)" -or "$appFolder" -eq "$($bcContainerHelperConfig.hostHelperFolder)\") {
+        throw "The folder specified in ObjectsFolder will be erased, you cannot specify $($bcContainerHelperConfig.hostHelperFolder)"
     }
 
     if (!(Test-Path $appFileName)) {

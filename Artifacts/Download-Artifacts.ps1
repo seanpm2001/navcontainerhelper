@@ -37,14 +37,14 @@ $telemetryScope = InitTelemetryScope -name $MyInvocation.InvocationName -paramet
 try {
 
     if ($basePath -eq "") {
-        $basePath = $bcartifactsCacheFolder
+        $basePath = $bcContainerHelperConfig.bcartifactsCacheFolder
     }
 
     if (-not (Test-Path $basePath)) {
         New-Item $basePath -ItemType Directory | Out-Null
     }
 
-    $appMutexName = "dl-$($artifactUrl.Split('?')[0])"
+    $appMutexName = "dl-$($artifactUrl.Split('?')[0].Substring(8).Replace('/','_'))"
     $appMutex = New-Object System.Threading.Mutex($false, $appMutexName)
     try {
         try {
@@ -159,7 +159,7 @@ try {
             }
             $platformUri = [Uri]::new($platformUrl)
     
-            $PlatformMutexName = "dl-$($platformUrl.Split('?')[0])"
+            $PlatformMutexName = "dl-$($platformUrl.Split('?')[0].Substring(8).Replace('/','_'))"
             $PlatformMutex = New-Object System.Threading.Mutex($false, $PlatformMutexName)
             try {
                 try {

@@ -33,7 +33,7 @@ try {
 
     $sharedFolder = ""
     if ($containerName) {
-        $sharedFolder = Join-Path $extensionsFolder "$containerName\$([Guid]::NewGuid().ToString())"
+        $sharedFolder = Join-Path $bcContainerHelperConfig.hostHelperFolder "Extensions\$containerName\$([Guid]::NewGuid().ToString())"
         New-Item $sharedFolder -ItemType Directory | Out-Null
     }
     try {
@@ -48,17 +48,18 @@ try {
                 $appJson = Invoke-ScriptInBcContainer -containerName $containerName -scriptblock { Param($appFile)
                     Get-NavAppInfo -Path $appFile | ConvertTo-Json -Depth 99
                 } -argumentList (Get-BcContainerPath -containerName $containerName -path $destFile) | ConvertFrom-Json
-                #Remove-Item -Path $destFile
+                Remove-Item -Path $destFile
+                $appJson.Version = "$($appJson.Version.Major).$($appJson.Version.Minor).$($appJson.Version.Build).$($appJson.Version.Revision)"
                 $appJson | Add-Member -NotePropertyName 'Id' -NotePropertyValue $appJson.AppId.Value
                 if ($appJson.Dependencies) {
-                    $appJson.Dependencies | % { if ($_) { 
+                    $appJson.Dependencies | ForEach-Object { if ($_) { 
                         $_ | Add-Member -NotePropertyName 'Id' -NotePropertyValue $_.AppId
-                        $_ | Add-Member -NotePropertyName 'Version' -NotePropertyValue $_.MinVersion.ToString()
+                        $_ | Add-Member -NotePropertyName 'Version' -NotePropertyValue "$($_.MinVersion.Major).$($_.MinVersion.Minor).$($_.MinVersion.Build).$($_.MinVersion.Revision)"
                     } }
                 }
             }
             else {
-                $tmpFolder = Join-Path (Get-TempDir) ([Guid]::NewGuid().ToString())
+                $tmpFolder = Join-Path ([System.IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
                 try {
                     Extract-AppFileToFolder -appFilename $appFile -appFolder $tmpFolder -generateAppJson 6> $null
                     $appJsonFile = Join-Path $tmpFolder "app.json"

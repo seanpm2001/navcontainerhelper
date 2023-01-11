@@ -1,14 +1,47 @@
-﻿function Get-DefaultCredential {
+﻿$useTimeOutWebClient = $false
+if ($PSVersionTable.PSVersion -lt "6.0.0" -and !$useTimeOutWebClient) {
+$Source = @"
+	using System.Net;
+ 
+	public class TimeoutWebClient : WebClient
+	{
+        int theTimeout;
+
+        public TimeoutWebClient(int timeout)
+        {
+            theTimeout = timeout;
+        }
+
+		protected override WebRequest GetWebRequest(System.Uri address)
+		{
+			WebRequest request = base.GetWebRequest(address);
+			if (request != null)
+			{
+				request.Timeout = theTimeout;
+			}
+			return request;
+		}
+ 	}
+"@;
+ 
+try {
+    Add-Type -TypeDefinition $Source -Language CSharp -WarningAction SilentlyContinue | Out-Null
+    $useTimeOutWebClient = $true
+}
+catch {}
+}
+
+function Get-DefaultCredential {
     Param(
         [string]$Message,
         [string]$DefaultUserName,
         [switch]$doNotAskForCredential
     )
 
-    if (Test-Path "$hostHelperFolder\settings.ps1") {
-        . "$hostHelperFolder\settings.ps1"
-        if (Test-Path "$hostHelperFolder\aes.key") {
-            $key = Get-Content -Path "$hostHelperFolder\aes.key"
+    if (Test-Path "$($bcContainerHelperConfig.hostHelperFolder)\settings.ps1") {
+        . "$($bcContainerHelperConfig.hostHelperFolder)\settings.ps1"
+        if (Test-Path "$($bcContainerHelperConfig.hostHelperFolder)\aes.key") {
+            $key = Get-Content -Path "$($bcContainerHelperConfig.hostHelperFolder)\aes.key"
             New-Object System.Management.Automation.PSCredential ($DefaultUserName, (ConvertTo-SecureString -String $adminPassword -Key $key))
         } else {
             New-Object System.Management.Automation.PSCredential ($DefaultUserName, (ConvertTo-SecureString -String $adminPassword))
@@ -42,7 +75,8 @@ function CmdDo {
         [string] $command = "",
         [string] $arguments = "",
         [switch] $silent,
-        [switch] $returnValue
+        [switch] $returnValue,
+        [string] $inputStr = ""
     )
 
     $oldNoColor = "$env:NO_COLOR"
@@ -55,6 +89,9 @@ function CmdDo {
         $pinfo.FileName = $command
         $pinfo.RedirectStandardError = $true
         $pinfo.RedirectStandardOutput = $true
+        if ($inputStr) {
+            $pinfo.RedirectStandardInput = $true
+        }
         $pinfo.WorkingDirectory = Get-Location
         $pinfo.UseShellExecute = $false
         $pinfo.Arguments = $arguments
@@ -63,7 +100,10 @@ function CmdDo {
         $p = New-Object System.Diagnostics.Process
         $p.StartInfo = $pinfo
         $p.Start() | Out-Null
-    
+        if ($inputStr) {
+            $p.StandardInput.WriteLine($inputStr)
+            $p.StandardInput.Close()
+        }
         $outtask = $p.StandardOutput.ReadToEndAsync()
         $errtask = $p.StandardError.ReadToEndAsync()
         $p.WaitForExit();
@@ -342,7 +382,7 @@ function GetTestToolkitApps {
 
             if (!$includeTestFrameworkOnly) {
                 # Add Test Libraries
-                $apps += "Microsoft_System Application Test Library.app", "Microsoft_Tests-TestLibraries.app" | % {
+                $apps += "Microsoft_System Application Test Library.app", "Microsoft_Tests-TestLibraries.app" | ForEach-Object {
                     @(get-childitem -Path "C:\Applications\*.*" -recurse -filter $_)
                 }
     
@@ -361,12 +401,12 @@ function GetTestToolkitApps {
             }
         }
 
-        $apps | % {
+        $apps | ForEach-Object {
             $appFile = Get-ChildItem -path "c:\applications.*\*.*" -recurse -filter ($_.Name).Replace(".app","_*.app")
             if (!($appFile)) {
                 $appFile = $_
             }
-            $appFile
+            $appFile.FullName
         }
     } -argumentList $includeTestLibrariesOnly, $includeTestFrameworkOnly, $includeTestRunnerOnly, $includePerformanceToolkit
 }
@@ -435,7 +475,7 @@ function CopyAppFilesToFolder {
         $appFile = $_
         if ($appFile -like "http://*" -or $appFile -like "https://*") {
             $appUrl = $appFile
-            $appFile = Join-Path (Get-TempDir) ([Guid]::NewGuid().ToString())
+            $appFile = Join-Path ([System.IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
             Download-File -sourceUrl $appUrl -destinationFile $appFile
             CopyAppFilesToFolder -appFile $appFile -folder $folder
             Remove-Item -Path $appFile -Force
@@ -451,13 +491,13 @@ function CopyAppFilesToFolder {
             }
         }
         elseif (Test-Path $appFile -PathType Leaf) {
-            if ([string]::new([char[]](Get-Content $appFile -Encoding byte -TotalCount 2)) -eq "PK") {
-                $tmpFolder = Join-Path (Get-TempDir) ([Guid]::NewGuid().ToString())
+            if ([string]::new([char[]](Get-Content $appFile @byteEncodingParam -TotalCount 2)) -eq "PK") {
+                $tmpFolder = Join-Path ([System.IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
                 $copied = $false
                 try {
                     if ($appFile -notlike "*.zip") {
                         $orgAppFile = $appFile
-                        $appFile = Join-Path (Get-TempDir) "$([System.IO.Path]::GetFileName($orgAppFile)).zip"
+                        $appFile = Join-Path ([System.IO.Path]::GetTempPath()) "$([System.IO.Path]::GetFileName($orgAppFile)).zip"
                         Copy-Item $orgAppFile $appFile
                         $copied = $true
                     }
@@ -764,10 +804,6 @@ function Get-WWWRootPath {
     }
 }
 
-function Get-TempDir {
-    (Get-Item -Path $env:temp).FullName
-}
-
 function Parse-JWTtoken([string]$token) {
     if ($token.Contains(".") -and $token.StartsWith("eyJ")) {
         $tokenPayload = $token.Split(".")[1].Replace('-', '+').Replace('_', '/')
@@ -881,4 +917,94 @@ function GetHash {
 
     $stream = [IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($str))
     (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash
+}
+
+function Wait-Task {
+    param(
+        [Parameter(Mandatory, ValueFromPipeline)]
+        [System.Threading.Tasks.Task[]]$Task
+    )
+
+    Begin {
+        $Tasks = @()
+    }
+
+    Process {
+        $Tasks += $Task
+    }
+
+    End {
+        While (-not [System.Threading.Tasks.Task]::WaitAll($Tasks, 200)) {}
+        $Tasks.ForEach( { $_.GetAwaiter().GetResult() })
+    }
+}
+Set-Alias -Name await -Value Wait-Task -Force
+
+function DownloadFileLow {
+    Param(
+        [string] $sourceUrl,
+        [string] $destinationFile,
+        [switch] $dontOverwrite,
+        [switch] $useDefaultCredentials,
+        [hashtable] $headers = @{"UserAgent" = "BcContainerHelper $bcContainerHelperVersion" },
+        [int] $timeout = 100
+    )
+
+    if ($useTimeOutWebClient) {
+        Write-Host "Using WebClient"
+        $webClient = New-Object TimeoutWebClient -ArgumentList (1000*$timeout)
+        $headers.Keys | ForEach-Object {
+            $webClient.Headers.Add($_, $headers."$_")
+        }
+        $webClient.UseDefaultCredentials = $useDefaultCredentials
+        if (Test-Path $destinationFile -PathType Leaf) {
+            if ($dontOverwrite) { 
+                return
+            }
+            Remove-Item -Path $destinationFile -Force
+        }
+        try {
+            $webClient.DownloadFile($sourceUrl, $destinationFile)
+        }
+        finally {
+            $webClient.Dispose()
+        }
+    }
+    else {
+        Write-Host "Using HttpClient"
+        if ($useDefaultCredentials) {
+            $handler = New-Object System.Net.Http.HttpClientHandler
+            $handler.UseDefaultCredentials = $true
+            $httpClient = New-Object System.Net.Http.HttpClient -ArgumentList $handler
+        }
+        else {
+            $httpClient = New-Object System.Net.Http.HttpClient
+        }
+        $httpClient.Timeout = [Timespan]::FromSeconds($timeout)
+        $headers.Keys | ForEach-Object {
+            $httpClient.DefaultRequestHeaders.Add($_, $headers."$_")
+        }
+        $stream = $null
+        $fileStream = $null
+        if ($dontOverwrite) {
+            $fileMode = [System.IO.FileMode]::CreateNew
+        }
+        else {
+            $fileMode = [System.IO.FileMode]::Create
+        }
+        try {
+            $stream = $httpClient.GetStreamAsync($sourceUrl).GetAwaiter().GetResult()
+            $fileStream = New-Object System.IO.Filestream($destinationFile, $fileMode)
+            $stream.CopyToAsync($fileStream).GetAwaiter().GetResult() | Out-Null
+            $fileStream.Close()
+        }
+        finally {
+            if ($fileStream) {
+                $fileStream.Dispose()
+            }
+            if ($stream) {
+                $stream.Dispose()
+            }
+        }
+    }
 }

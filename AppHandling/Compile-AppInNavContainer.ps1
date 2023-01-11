@@ -108,7 +108,7 @@ function Compile-AppInBcContainer {
         [string] $assemblyProbingPaths,
         [Parameter(Mandatory=$false)]
         [ValidateSet('ExcludeGeneratedTranslations','GenerateCaptions','GenerateLockedTranslations','NoImplicitWith','TranslationFile','LcgTranslationFile')]
-        [string[]] $features,
+        [string[]] $features = @(),
         [Hashtable] $bcAuthContext,
         [string] $environment,
         [string[]] $treatWarningsAsErrors = $bcContainerHelperConfig.TreatWarningsAsErrors,
@@ -197,7 +197,17 @@ try {
     if ("$appName" -eq "") {
         $appName = "$($appJsonObject.Publisher)_$($appJsonObject.Name)_$($appJsonObject.Version).app".Split([System.IO.Path]::GetInvalidFileNameChars()) -join ''
     }
-
+    if ([bool]($appJsonObject.PSobject.Properties.name -eq "id")) {
+        AddTelemetryProperty -telemetryScope $telemetryScope -key "id" -value $appJsonObject.id
+    }
+    elseif ([bool]($appJsonObject.PSobject.Properties.name -eq "appid")) {
+        AddTelemetryProperty -telemetryScope $telemetryScope -key "id" -value $appJsonObject.appid
+    }
+    AddTelemetryProperty -telemetryScope $telemetryScope -key "publisher" -value $appJsonObject.Publisher
+    AddTelemetryProperty -telemetryScope $telemetryScope -key "name" -value $appJsonObject.Name
+    AddTelemetryProperty -telemetryScope $telemetryScope -key "version" -value $appJsonObject.Version
+    AddTelemetryProperty -telemetryScope $telemetryScope -key "appname" -value $appName
+    
     Write-Host "Using Symbols Folder: $appSymbolsFolder"
     if (!(Test-Path -Path $appSymbolsFolder -PathType Container)) {
         New-Item -Path $appSymbolsFolder -ItemType Directory | Out-Null
@@ -251,7 +261,7 @@ try {
     # unpack compiler
     Invoke-ScriptInBcContainer -containerName $containerName -ScriptBlock {
         if (!(Test-Path "c:\build" -PathType Container)) {
-            $tempZip = Join-Path $env:temp "alc.zip"
+            $tempZip = Join-Path ([System.IO.Path]::GetTempPath()) "alc.zip"
             Copy-item -Path (Get-Item -Path "c:\run\*.vsix").FullName -Destination $tempZip
             Expand-Archive -Path $tempZip -DestinationPath "c:\build\vsix"
         }
@@ -263,11 +273,13 @@ try {
 
     if (([bool]($appJsonObject.PSobject.Properties.name -eq "application")) -and $appJsonObject.application)
     {
+        AddTelemetryProperty -telemetryScope $telemetryScope -key "application" -value $appJsonObject.application
         $dependencies += @{"publisher" = "Microsoft"; "name" = "Application"; "version" = $appJsonObject.application }
     }
 
     if (([bool]($appJsonObject.PSobject.Properties.name -eq "platform")) -and $appJsonObject.platform)
     {
+        AddTelemetryProperty -telemetryScope $telemetryScope -key "platform" -value $appJsonObject.platform
         $dependencies += @{"publisher" = "Microsoft"; "name" = "System"; "version" = $appJsonObject.platform }
     }
 
@@ -321,6 +333,9 @@ try {
 
     $sslVerificationDisabled = $false
     $serverInstance = $customConfig.ServerInstance
+    $headers = @{}
+    $useDefaultCredentials = $false
+    $timeout = 100
     if ($bcAuthContext -and $environment) {
         $bcAuthContext = Renew-BcAuthContext -bcAuthContext $bcAuthContext
         $bcEnvironment = Get-BcEnvironments -bcAuthContext $bcAuthContext | Where-Object { $_.Name -eq $environment -and $_.Type -eq "Sandbox" }
@@ -330,13 +345,11 @@ try {
         $publishedApps = Get-BcPublishedApps -bcAuthContext $bcAuthContext -environment $environment | Where-Object { $_.state -eq "installed" }
         $devServerUrl = "$($bcContainerHelperConfig.apiBaseUrl.TrimEnd('/'))/v2.0/$environment"
         $bearerAuthValue = "Bearer $($bcAuthContext.AccessToken)"
-        $webclient = [System.Net.WebClient]::new()
-        $webClient.Headers.Add("Authorization", $bearerAuthValue)
+        $headers."Authorization" = $bearerAuthValue
     }
     elseif ($serverInstance -eq "") {
         Write-Host -ForegroundColor Yellow "INFO: You have to specify AuthContext and Environment if you are compiling in a filesOnly container in order to download dependencies"
         $devServerUrl = ""
-        $webClient = $null
     }
     else {
         if ($customConfig.DeveloperServicesSSLEnabled -eq "true") {
@@ -372,9 +385,9 @@ try {
             [SslVerification]::Disable()
         }
     
-        $webClient = [TimeoutWebClient]::new(300000)
+        $timeout = 300000
         if ($customConfig.ClientServicesCredentialType -eq "Windows") {
-            $webClient.UseDefaultCredentials = $true
+            $useDefaultCredentials = $true
         }
         else {
             if (!($credential)) {
@@ -385,7 +398,7 @@ try {
             $bytes = [System.Text.Encoding]::ASCII.GetBytes($pair)
             $base64 = [System.Convert]::ToBase64String($bytes)
             $basicAuthValue = "Basic $base64"
-            $webClient.Headers.Add("Authorization", $basicAuthValue)
+            $headers."Authorization" = $basicAuthValue
         }
     }
 
@@ -400,7 +413,7 @@ try {
             $publishedApps | Where-Object { $_.publisher -eq $publisher -and $_.name -eq $name } | % {
                 $symbolsName = "$($publisher)_$($name)_$($_.version).app".Split([System.IO.Path]::GetInvalidFileNameChars()) -join ''
             }
-            if ($webClient -eq $null) {
+            if ($headers -eq @{} -and !$useDefaultCredentials) {
                 Write-Host -ForegroundColor Yellow "WARNING: Unable to download symbols for $symbolsName"
             }
             else {
@@ -412,9 +425,9 @@ try {
                 $url = "$devServerUrl/dev/packages?publisher=$($publisher)&appName=$($name)&versionText=$($version)&tenant=$tenant"
                 Write-Host "Url : $Url"
                 try {
-                    $webClient.DownloadFile($url, $symbolsFile)
+                    DownloadFileLow -sourceUrl $url -destinationFile $symbolsFile -timeout $timeout -useDefaultCredentials:$useDefaultCredentials -Headers $headers
                 }
-                catch [System.Net.WebException] {
+                catch {
                     $throw = $true
                     if ($customConfig.ClientServicesCredentialType -eq "Windows") {
                         try {
@@ -663,7 +676,7 @@ try {
         if ($CopyAppToSymbolsFolder) {
             Copy-Item -Path $appFile -Destination $appSymbolsFolder -ErrorAction SilentlyContinue
             if (Test-Path -Path (Join-Path -Path $appSymbolsFolder -ChildPath $appName)) {
-                Write-Host "${appName} copied to ${appSymbolsFolder}"
+                Write-Host "$($appName) copied to $($appSymbolsFolder)"
                 Invoke-ScriptInBcContainer -containerName $containerName -ScriptBlock { Param($appSymbolsFolder, $appName)
                     $appFile = Join-Path -Path $appSymbolsFolder -ChildPath $appName
                     while (-not (Test-Path -Path $appFile)) { Start-Sleep -Seconds 1 }

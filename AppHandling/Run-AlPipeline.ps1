@@ -160,6 +160,8 @@
   Only relevant for AppSource Apps when AppSourceCop is enabled. This needs to be an array (or a string with a comma seperated list) of supported countries for this app.
  .Parameter obsoleteTagMinAllowedMajorMinor
   Only relevant for AppSource Apps. Objects that are pending obsoletion with an obsolete tag version lower than the minimum set in the AppSourceCop.json file are not allowed. (AS0105)
+ .Parameter features
+  Features to set when compiling the app.
  .Parameter DockerPull
   Override function parameter for docker pull
  .Parameter NewBcContainer
@@ -284,6 +286,7 @@ Param(
     $AppSourceCopMandatoryAffixes = @(),
     $AppSourceCopSupportedCountries = @(),
     [string] $obsoleteTagMinAllowedMajorMinor = "",
+    [string[]] $features = @(),
     [scriptblock] $DockerPull,
     [scriptblock] $NewBcContainer,
     [scriptblock] $SetBcContainerKeyVaultAadAppAndCertificate,
@@ -950,7 +953,7 @@ Measure-Command {
         Write-Host -ForegroundColor Yellow "Installing apps for additional country $testCountry"
     }
 
-    $tmpAppFolder = Join-Path (Get-TempDir) ([guid]::NewGuid().ToString())
+    $tmpAppFolder = Join-Path ([System.IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString())
     $tmpAppFiles = @()
     $installApps | ForEach-Object{
         $appId = [Guid]::Empty
@@ -1496,6 +1499,7 @@ Write-Host -ForegroundColor Yellow @'
         "preProcessorSymbols" = $preProcessorSymbols
         "generatecrossreferences" = $generatecrossreferences
         "updateDependencies" = $UpdateDependencies
+        "features" = $features
     }
 
     if ($buildOutputFile) {
@@ -1947,7 +1951,7 @@ $installTestApps | ForEach-Object {
     else {
         $appFile = $_
         if ($appFile -eq "$_".Trim('()')) {
-            $tmpFolder = Join-Path (Get-TempDir) ([Guid]::NewGuid().ToString())
+            $tmpFolder = Join-Path ([System.IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
             try {
                 $appList = CopyAppFilesToFolder -appFiles $_ -folder $tmpFolder
                 $appList | ForEach-Object {

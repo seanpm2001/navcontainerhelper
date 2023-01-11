@@ -14,7 +14,7 @@
  .Parameter pfxPassword
   Password of the certificate pfx file
  .Parameter timeStampServer
-  Specifies the URL of the time stamp server. Default is $bcContainerHelperConfig.timeStampServer, which defaults to http://timestamp.verisign.com/scripts/timestamp.dll
+  Specifies the URL of the time stamp server. Default is $bcContainerHelperConfig.timeStampServer, which defaults to http://timestamp.digicert.com
  .Example
   Sign-BcContainerApp -appFile c:\programdata\bccontainerhelper\myapp.app -pfxFile http://my.secure.url/mycert.pfx -pfxPassword $securePassword
  .Example
@@ -44,8 +44,7 @@ try {
         throw "The app ($appFile)needs to be in a folder, which is shared with the container $containerName"
     }
 
-    $ExtensionsFolder = Join-Path $hosthelperfolder "Extensions"
-    $sharedPfxFile = Join-Path $ExtensionsFolder "$containerName\my\$([GUID]::NewGuid().ToString()).pfx"
+    $sharedPfxFile = Join-Path $bcContainerHelperConfig.hostHelperFolder "Extensions\$containerName\my\$([GUID]::NewGuid().ToString()).pfx"
     $removeSharedPfxFile = $true
     if ($pfxFile -like "https://*" -or $pfxFile -like "http://*") {
         Write-Host "Downloading certificate file to container"

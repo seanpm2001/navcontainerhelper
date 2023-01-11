@@ -1,4 +1,12 @@
+4.0.9
+Experimental support for PowerShell 7, please report any issues on https://github.com/microsoft/navcontainerhelper/issues.
+Experimantal support for running BcContainerHelper on Linux (only non-container stuff), please report any issues on https://github.com/microsoft/navcontainerhelper/issues.
+Adding additional properties to telemetry. Set MicrosoftTelemetryConnectionString to an empty string in settings to opt-out.
+
 4.0.8
+Add parameter 'features' to Run-AlPipeline which allows for setting the compiler features 
+Add SchemaSyncMode to Publish-PerTenantExtensionApps
+Use submodules inside BcContainerHelper
 
 4.0.7
 Issue #2765 Unused param in Publish-BuildOutputToAzureFeed.ps1
@@ -494,6 +502,9 @@ Add Parameter -doNotPublishAdminPort to Setup-TraefikContainerForBcContainers
 Add Parameter -additionalParameters to Setup-TraefikContainerForBcContainers
 Issue #1577 Run-AlValidation and Extract-AppFileToFolder require absolute paths
 Issue #1579 Change default timeStampServer and digestAlgorithm
+Issues #1912, #957, #2796 - PowerShell 7 is now supported. Please report issues on https://github.com/microsoft/navcontainerhelper/issues
+The parts of BcContainerHelper, which doesn't work with Containers, can also run on Linux as an experiment. Please report issues on https://github.com/microsoft/navcontainerhelper/issues
+Issue #2833 Publish-PerTenantExtensionApps fails after first app
 
 1.0.17
 Issue #1494 Creating another container based on existing artifact

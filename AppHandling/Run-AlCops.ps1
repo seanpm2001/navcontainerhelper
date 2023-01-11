@@ -51,7 +51,7 @@ function Run-AlCops {
         $affixes,
         $supportedCountries,
         [string] $obsoleteTagMinAllowedMajorMinor = "",
-        $appPackagesFolder = (Join-Path $hosthelperfolder ([Guid]::NewGuid().ToString())),
+        $appPackagesFolder = (Join-Path $bcContainerHelperConfig.hostHelperFolder ([Guid]::NewGuid().ToString())),
         [switch] $enableAppSourceCop,
         [switch] $enableCodeCop,
         [switch] $enableUICop,
@@ -85,7 +85,7 @@ try {
         throw "You cannot run AppSourceCop and PerTenantExtensionCop at the same time"
     }
      
-    $appsFolder = Join-Path $hosthelperfolder ([Guid]::NewGuid().ToString())
+    $appsFolder = Join-Path $bcContainerHelperConfig.hostHelperFolder ([Guid]::NewGuid().ToString())
     New-Item -Path $appsFolder -ItemType Directory | Out-Null
     $apps = Sort-AppFilesByDependencies -containerName $containerName -appFiles @(CopyAppFilesToFolder -appFiles $apps -folder $appsFolder) -WarningAction SilentlyContinue
     
@@ -102,7 +102,7 @@ try {
         $previousApps = Sort-AppFilesByDependencies -containerName $containerName -appFiles $appList -WarningAction SilentlyContinue
         $previousApps | ForEach-Object {
             $appFile = $_
-            $tmpFolder = Join-Path (Get-TempDir) ([Guid]::NewGuid().ToString())
+            $tmpFolder = Join-Path ([System.IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
             try {
                 Extract-AppFileToFolder -appFilename $appFile -appFolder $tmpFolder -generateAppJson
                 $xappJsonFile = Join-Path $tmpFolder "app.json"
@@ -127,7 +127,7 @@ try {
         # unpack compiler
         $latestSupportedRuntimeVersion = Invoke-ScriptInBcContainer -containerName $containerName -ScriptBlock { Param([string] $bcversion)
             if (!(Test-Path "c:\build" -PathType Container)) {
-                $tempZip = Join-Path $env:temp "alc.zip"
+                $tempZip = Join-Path ([System.IO.Path]::GetTempPath()) "alc.zip"
                 Copy-item -Path (Get-Item -Path "c:\run\*.vsix").FullName -Destination $tempZip
                 Expand-Archive -Path $tempZip -DestinationPath "c:\build\vsix"
             }
@@ -145,7 +145,7 @@ try {
         $appFile = $_
         $appFileName = [System.IO.Path]::GetFileName($appFile)
 
-        $tmpFolder = Join-Path $hosthelperfolder ([Guid]::NewGuid().ToString())
+        $tmpFolder = Join-Path $bcContainerHelperConfig.hostHelperFolder ([Guid]::NewGuid().ToString())
         try {
             $length = $global:_validationResult.Length
             if (!$skipVerification) {
